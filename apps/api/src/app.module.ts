@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common'
 import { EnvModule } from './config/env.module'
+import { ExportModule } from './export/export.module'
 import { HealthModule } from './health/health.module'
 import { JobsModule } from './jobs/jobs.module'
 import { MediaModule } from './media/media.module'
@@ -15,6 +16,7 @@ import { TranscribeModule } from './transcribe/transcribe.module'
     JobsModule,
     ProjectsModule,
     TranscribeModule,
+    ExportModule,
     HealthModule,
   ],
 })
