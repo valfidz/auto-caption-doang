@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common'
+import { CleanupModule } from './cleanup/cleanup.module'
 import { EnvModule } from './config/env.module'
 import { ExportModule } from './export/export.module'
 import { FontsModule } from './fonts/fonts.module'
@@ -22,6 +23,7 @@ import { TranscribeModule } from './transcribe/transcribe.module'
     ExportModule,
     FontsModule,
     HealthModule,
+    CleanupModule,
   ],
 })
 export class AppModule {}

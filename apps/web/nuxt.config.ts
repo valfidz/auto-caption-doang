@@ -21,6 +21,8 @@ export default defineNuxtConfig({
   },
   typescript: { strict: true },
   vite: {
+    // Worker JASSUB memakai dynamic import; format IIFE tidak mendukung code-splitting.
+    worker: { format: 'es' },
     server: { fs: { allow: ['..', '../..'] } },
   },
 })

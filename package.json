@@ -16,7 +16,8 @@
     "format": "prettier --write .",
     "doctor": "pnpm --filter @acs/shared build && pnpm --filter @acs/api run doctor",
     "db:push": "pnpm --filter @acs/api db:push",
-    "setup:py": "node scripts/setup-python.mjs"
+    "setup:py": "node scripts/setup-python.mjs",
+    "fetch:model": "node scripts/fetch-model.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",

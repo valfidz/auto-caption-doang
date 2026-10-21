@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { Language, ProjectDto } from '@acs/shared'
+import type { HealthReport, Language, ProjectDto } from '@acs/shared'
 
 const { apiFetch } = useApi()
 const router = useRouter()
@@ -14,6 +14,13 @@ const language = ref<Language>('en')
 const uploadError = ref<string | null>(null)
 const fileInput = ref<HTMLInputElement | null>(null)
 
+const health = ref<HealthReport | null>(null)
+const healthError = ref<string | null>(null)
+const healthDismissed = ref(false)
+const healthWarnings = computed(
+  () => health.value?.checks.filter((check) => check.status !== 'ok') ?? [],
+)
+
 const ACCEPTED = ['.mp4', '.mov', '.mkv', '.webm', '.m4v', '.avi']
 
 async function loadProjects() {
@@ -25,6 +32,15 @@ async function loadProjects() {
     error.value = (err as { message?: string }).message ?? 'Gagal memuat proyek'
   } finally {
     loading.value = false
+  }
+}
+
+async function loadHealth() {
+  try {
+    health.value = await apiFetch<HealthReport>('/health')
+    healthError.value = null
+  } catch (err) {
+    healthError.value = (err as { message?: string }).message ?? 'API tidak terjangkau'
   }
 }
 
@@ -84,6 +100,7 @@ async function removeProject(project: ProjectDto) {
 }
 
 onMounted(loadProjects)
+onMounted(loadHealth)
 </script>
 
 <template>
@@ -92,6 +109,27 @@ onMounted(loadProjects)
     <p class="page-sub">
       Unggah video, lalu transkripsi dan atur caption. Semua diproses lokal di mesin ini.
     </p>
+
+    <div v-if="healthError" class="banner banner-error" style="margin-bottom: 16px">
+      {{ healthError }} — pastikan API berjalan (`pnpm dev`).
+    </div>
+    <div
+      v-else-if="healthWarnings.length > 0 && !healthDismissed"
+      class="banner banner-warn"
+      style="margin-bottom: 16px; display: flex; gap: 12px; align-items: flex-start"
+    >
+      <div style="flex: 1">
+        <strong>Perhatian lingkungan:</strong>
+        <ul style="margin: 6px 0 0 18px; padding: 0">
+          <li v-for="check in healthWarnings" :key="check.name">
+            {{ check.name }} — {{ check.detail }}
+          </li>
+        </ul>
+      </div>
+      <button class="btn btn-ghost btn-sm" style="margin: 0" @click="healthDismissed = true">
+        Tutup
+      </button>
+    </div>
 
     <div class="card upload-card">
       <div

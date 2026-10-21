@@ -50,3 +50,28 @@ PRD: `PRD-auto-caption-studio.md` · Panduan kerja: `AGENT-GUIDE-auto-caption-st
 25. **Progres unggah memakai `XMLHttpRequest`** karena `fetch` tidak memberi event progres upload; seluruh request lain memakai `fetch` biasa.
 26. **Video disajikan dengan HTTP Range manual** (`206`, `Content-Range`, `Accept-Ranges`, dukungan suffix range dan 416). Ini syarat agar seek di elemen `<video>` berfungsi, terutama untuk video panjang.
 
+## D7 — Preview JASSUB (M5)
+
+27. **Aset JASSUB dibundel Vite, bukan disalin ke `public/`.** Worker JASSUB mengimpor modul bare (`abslink`, `lfa-ponyfill`) yang tidak bisa diselesaikan browser tanpa bundler, jadi `workerUrl`/`wasmUrl` diambil dari impor `?worker&url` / `?url`. Menyalin file mentah ke `public/` akan gagal di runtime.
+28. **Font di-preload lewat opsi `fonts`, bukan hanya `availableFonts`.** `availableFonts` saja tidak memicu pemuatan font saat libass memintanya, sehingga libass tidak menemukan satu pun font (`fontselect: failed to find any fallback`). Font yang dipakai (`fonts: [url]`) selalu dipreload; `availableFonts` tetap diisi agar keluarga font lain bisa dimuat bila dipakai.
+29. **`<video crossorigin="anonymous">` wajib.** Tanpa itu, video dari API (origin berbeda) dianggap *tainted*, `VideoFrame` gagal dibuat, dan JASSUB tidak bisa merender. API mengirim `Access-Control-Allow-Origin` untuk origin web.
+30. **ASS untuk preview dibuat oleh fungsi yang sama dengan export** (`buildGroups` + `generateAss` di `packages/shared`). Verifikasi visual: frame export pada `t=5,6s` identik dengan preview pada waktu yang sama (template Pop Bounce dan One Word).
+31. **Penyimpanan hasil edit memakai penjaga urutan (sequence).** Respons PUT yang lebih lama tidak boleh menimpa editan yang lebih baru — tanpa ini, dua penyimpanan debounce yang berdekatan bisa mengembalikan daftar kata lama.
+
+## D8 — Style, template, preset, posisi (M6)
+
+32. **Template bawaan di-seed sebagai baris `StylePreset` (id = templateId) saat server start.** Dengan begitu "jadikan default" berlaku seragam untuk template bawaan maupun preset pengguna tanpa tabel pengaturan tambahan. Preset default dipakai sebagai style awal proyek baru.
+33. **`PUT /projects/:id/style` menormalkan semua nilai** (clamp ukuran, outline, posisi, warna hex) di server. UI tidak boleh menjadi satu-satunya penjaga validitas karena state bisa datang dari preset lama.
+34. **Posisi disimpan dalam persen** (`posXPct`/`posYPct`), dihitung dari kotak video yang sedang tampil, dengan snap ke 50% bila dalam ±2%. Handle digeser sedikit ke atas dari titik anchor agar tidak menutupi teks, dengan garis penunjuk ke titik sebenarnya.
+35. **Perubahan style disimpan dengan debounce 700 ms + penjaga urutan**, sama seperti transkrip. Preview diperbarui segera (tanpa menunggu server) agar terasa langsung.
+
+## D9 — Polesan (M7)
+
+36. **Pembatalan worker Python bersifat kooperatif.** Python dari venv berjalan sebagai proses cucu; `child.kill()` hanya menghentikan launcher dan `taskkill` tidak selalu tersedia. Karena itu API menulis `${DATA_DIR}/tmp/cancel-<jobId>.flag`, dan worker memeriksanya di antara segmen serta sebelum/sesudah memuat model. Untuk FFmpeg (proses anak langsung), kill tetap langsung.
+37. **Saat server start, job `queued`/`running` ditandai `failed`** dan flag pembatalan ditulis untuk job transkripsi, sehingga worker yatim (bila ada) berhenti sendiri. Status proyek yang menggantung dikembalikan ke `uploaded`/`ready`.
+38. **Pembersihan berkas sementara berbasis `mtime` + TTL** (`TEMP_TTL_DAYS`, default 7), berjalan saat start dan setiap 6 jam: isi `DATA_DIR/tmp`, folder `work*` per proyek, dan `output.tmp.mp4`. Folder kerja yang lebih muda dari 1 jam tidak disentuh agar job berjalan aman. `TEMP_TTL_DAYS=0` mematikan pembersihan.
+39. **Peringatan lingkungan tampil di halaman `/`**: hasil `GET /health` yang berstatus `warn` (CUDA tidak siap, model belum diunduh) ditampilkan sebagai banner yang bisa ditutup, sesuai permintaan menampilkan peringatan fallback CPU di UI.
+40. **Error job disimpan di `Job.error` dan ditampilkan apa adanya** di editor; tombol aksi tetap bisa dicoba ulang. Tidak ada exception filter global karena format default Nest (`statusCode`, `message`) sudah dipakai UI.
+41. **Keterbatasan yang diterima (bukan bug):** HDR/10-bit jadi pucat karena `yuv420p`; reflow kata sekitar saat pop; preview single-thread tanpa header COOP/COEP; `large-v3` float16 butuh VRAM > 4 GB (pakai `int8_float16` atau model lebih kecil).
+
+

@@ -1,6 +1,10 @@
-import { Injectable, NotFoundException, OnModuleInit } from '@nestjs/common'
+import { Inject, Injectable, NotFoundException, OnModuleInit } from '@nestjs/common'
+import fs from 'node:fs'
+import path from 'node:path'
 import type { Job as JobRow } from '@prisma/client'
 import type { JobDto, JobStatus, JobType } from '@acs/shared'
+import { APP_ENV } from '../config/env.module'
+import type { AppEnv } from '../config/env'
 import { PrismaService } from '../prisma/prisma.module'
 
 const TERMINAL: readonly JobStatus[] = ['done', 'failed', 'canceled']
@@ -49,7 +53,10 @@ export class JobsService implements OnModuleInit {
   private readonly queue: QueueEntry[] = []
   private active: { jobId: string; controller: AbortController } | null = null
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Inject(APP_ENV) private readonly env: AppEnv,
+  ) {}
 
   async onModuleInit(): Promise<void> {
     await this.recoverInterrupted()
@@ -57,6 +64,18 @@ export class JobsService implements OnModuleInit {
 
   /** Saat server start: job yang masih "running" berarti terinterupsi restart. */
   async recoverInterrupted(): Promise<number> {
+    const stuck = await this.prisma.job.findMany({
+      where: { status: { in: ['queued', 'running'] } },
+    })
+
+    // Tulis flag pembatalan agar worker Python yatim (bila masih hidup)
+    // berhenti sendiri pada pengecekan segmen berikutnya.
+    for (const job of stuck) {
+      if (job.type !== 'transcribe') continue
+      const flag = path.join(this.env.tmpDir, `cancel-${job.id}.flag`)
+      await fs.promises.writeFile(flag, '1').catch(() => undefined)
+    }
+
     const result = await this.prisma.job.updateMany({
       where: { status: { in: ['queued', 'running'] } },
       data: {
