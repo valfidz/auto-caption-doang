@@ -56,18 +56,18 @@ function safeUnlink(file: string): void {
 
 function killProcessTree(child: ChildProcess): void {
   if (child.pid == null || child.exitCode !== null) return
+  // child.kill() bekerja untuk proses anak langsung (mis. FFmpeg).
+  try {
+    child.kill()
+  } catch {
+    /* ignore */
+  }
   if (process.platform === 'win32') {
-    // taskkill berjalan tanpa pipe stdio; tetap aman di sandbox.
+    // Best-effort hentikan cucu proses (mis. launcher python venv) tanpa pipe stdio.
     spawnSync('taskkill', ['/pid', String(child.pid), '/T', '/F'], {
       stdio: 'ignore',
       windowsHide: true,
     })
-  } else {
-    try {
-      child.kill('SIGKILL')
-    } catch {
-      /* ignore */
-    }
   }
 }
 
