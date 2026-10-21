@@ -1,3 +1,5 @@
+import type { ProjectDto } from '@acs/shared'
+
 export interface ApiError {
   statusCode: number
   message: string
@@ -33,5 +35,66 @@ export function useApi() {
     return (await response.json()) as T
   }
 
-  return { base, apiFetch }
+  function videoUrl(projectId: string): string {
+    return `${base}/projects/${projectId}/video`
+  }
+
+  function downloadUrl(projectId: string): string {
+    return `${base}/projects/${projectId}/export/download`
+  }
+
+  return { base, apiFetch, videoUrl, downloadUrl }
+}
+
+/**
+ * Unggah video lewat XMLHttpRequest agar progres transfer bisa ditampilkan
+ * (fetch tidak menyediakan event progres unggah).
+ */
+export function uploadProject(
+  file: File,
+  options: { language: string; title?: string },
+  onProgress?: (fraction: number) => void,
+): Promise<ProjectDto> {
+  const config = useRuntimeConfig()
+  const base = String(config.public.apiBase).replace(/\/+$/, '')
+
+  return new Promise<ProjectDto>((resolve, reject) => {
+    const xhr = new XMLHttpRequest()
+    xhr.open('POST', `${base}/projects`)
+
+    xhr.upload.addEventListener('progress', (event) => {
+      if (event.lengthComputable && onProgress) onProgress(event.loaded / event.total)
+    })
+
+    xhr.addEventListener('load', () => {
+      let payload: unknown = null
+      try {
+        payload = JSON.parse(xhr.responseText)
+      } catch {
+        payload = null
+      }
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve(payload as ProjectDto)
+        return
+      }
+      const message =
+        (payload as { message?: string | string[] } | null)?.message ?? `HTTP ${xhr.status}`
+      reject({
+        statusCode: xhr.status,
+        message: Array.isArray(message) ? message.join(', ') : message,
+      } satisfies ApiError)
+    })
+    xhr.addEventListener('error', () =>
+      reject({ statusCode: 0, message: 'Koneksi ke API gagal.' } satisfies ApiError),
+    )
+    xhr.addEventListener('abort', () =>
+      reject({ statusCode: 0, message: 'Unggahan dibatalkan.' } satisfies ApiError),
+    )
+
+    const form = new FormData()
+    form.append('file', file, file.name)
+    form.append('language', options.language)
+    if (options.title) form.append('title', options.title)
+    xhr.send(form)
+  })
 }

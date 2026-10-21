@@ -12,7 +12,11 @@ const databaseUrl =
   `file:${path.join(dataDir, 'app.db').replace(/\\/g, '/')}`
 
 const require = createRequire(path.join(repoRoot, 'apps', 'api', 'package.json'))
-const prismaCli = require.resolve('prisma')
+const prismaCli = path.join(
+  path.dirname(require.resolve('prisma/package.json')),
+  'build',
+  'index.js',
+)
 
 const result = spawnSync(process.execPath, [prismaCli, 'generate'], {
   cwd: path.join(repoRoot, 'apps', 'api'),

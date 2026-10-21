@@ -35,3 +35,18 @@ PRD: `PRD-auto-caption-studio.md` · Panduan kerja: `AGENT-GUIDE-auto-caption-st
 
 17. **`assets/fonts/Montserrat-ExtraBold.ttf`** diunduh dari repo resmi Montserrat (OFL). Tabel `name` diverifikasi: family = `Montserrat ExtraBold`, subfamily = `Regular`, typographic family = `Montserrat`. Karena itu `StyleConfig.fontFamily = "Montserrat ExtraBold"` dan `Bold=0` di ASS, sesuai panduan.
 18. **Family name dibaca dari berkas**, bukan ditebak: endpoint `GET /fonts` (M6) membaca tabel `name` tiap font di `FONTS_DIR`, sehingga font tambahan milik pengguna (The Bold Font, Komika Axis) otomatis terdaftar dengan nama yang benar.
+
+## D5 — Build & tooling (revisi saat M0/M1)
+
+19. **Build memakai `tsc` langsung, bukan `tsup`/Nest CLI.** `tsup` (esbuild) dan `@nestjs/cli` sama-sama menjalankan proses pembantu dengan pipe stdio, yang diblokir di lingkungan Windows tertentu; `@nestjs/cli` juga gagal karena resolusi `ajv` yang ter-hoist. `tsc` murni menghasilkan output yang sama untuk kebutuhan proyek ini: `dist/esm` + `dist/cjs` (masing-masing diberi `package.json` kecil berisi `type`), dipakai Vite (web) dan Node/Nest (API).
+20. **`nest build` diganti `tsc -p tsconfig.build.json`**, dan `nest start --watch` diganti `tsc -w` + `node --watch dist/main.js`. `doctor` juga dikompilasi lebih dulu (`tsc` + `node dist/cli/doctor.js`) karena `tsx` memakai esbuild.
+
+## D6 — Proyek & penyimpanan (M1)
+
+21. **Path berkas disimpan relatif terhadap `DATA_DIR`** (`projects/<id>/source.mp4`), bukan absolut: memindahkan atau mem-backup folder `data/` tidak merusak proyek, dan tidak ada path Windows yang tertanam di database.
+22. **Unggahan streaming memakai `busboy`** dan langsung ditulis ke `data/tmp/upload-<uuid>/`, bukan buffer memori; body parser JSON/urlencoded dimatikan lalu dipasang ulang dengan limit 25 MB (transkrip besar), sehingga ukuran video tidak dibatasi body parser.
+23. **Validasi unggahan dilakukan sebelum proyek dibuat:** ekstensi (MP4/MOV/MKV/WebM/M4V/AVI) diperiksa, lalu `ffprobe` harus menemukan stream video. Berkas rusak tidak pernah menjadi baris `Project`.
+24. **`streamsearch` ditambahkan sebagai dependency langsung `@acs/api`.** Di lingkungan ini pnpm menautkan `busboy` sebagai junction, sehingga Node tidak mengikuti realpath-nya dan gagal me-resolve dependency internal `busboy`. Menambahkan dependency tersebut membuat resolusi tetap benar tanpa mengubah kode aplikasi.
+25. **Progres unggah memakai `XMLHttpRequest`** karena `fetch` tidak memberi event progres upload; seluruh request lain memakai `fetch` biasa.
+26. **Video disajikan dengan HTTP Range manual** (`206`, `Content-Range`, `Accept-Ranges`, dukungan suffix range dan 416). Ini syarat agar seek di elemen `<video>` berfungsi, terutama untuk video panjang.
+

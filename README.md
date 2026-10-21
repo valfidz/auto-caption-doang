@@ -64,7 +64,7 @@ data/           proyek, berkas sementara, SQLite (gitignored)
 | Milestone | Status |
 |---|---|
 | M0 Setup + health check | selesai |
-| M1 Upload & probe | belum |
+| M1 Upload & probe | selesai |
 | M2 Transkripsi | belum |
 | M3 Grouping & ASS | belum |
 | M4 Export | belum |
