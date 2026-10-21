@@ -1,0 +1,7 @@
+# Dependensi worker transkripsi (dipasang oleh `pnpm setup:py` ke .venv).
+faster-whisper>=1.2.0
+
+# --- Opsional: runtime CUDA 12 + cuDNN 9 untuk GPU (Windows/Linux) --------
+# Hanya perlu bila driver tidak menyediakan DLL CUDA/cuDNN di PATH.
+# nvidia-cublas-cu12>=12.4
+# nvidia-cudnn-cu12>=9.1

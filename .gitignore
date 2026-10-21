@@ -1,0 +1,34 @@
+# dependencies
+node_modules/
+.pnpm-store/
+.npm-cache/
+
+# build output
+dist/
+.nuxt/
+.output/
+*.tsbuildinfo
+
+# runtime data (projects, uploads, renders, sqlite db)
+data/
+.env
+.env.local
+*.db
+*.db-journal
+
+# python
+.venv/
+.pip-cache/
+__pycache__/
+*.pyc
+pip-*
+
+# tooling
+.DS_Store
+Thumbs.db
+coverage/
+*.log
+
+# berkas sementara dari tooling (pip, dsb.)
+/tmp*
+/pip-*

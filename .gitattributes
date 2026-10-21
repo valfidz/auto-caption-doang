@@ -1,0 +1,14 @@
+# Normalisasi akhir baris: LF di repo, aman untuk Windows & Linux.
+* text=auto eol=lf
+
+# Berkas biner jangan diubah.
+*.ttf binary
+*.otf binary
+*.woff2 binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.mp4 binary
+*.webm binary
+*.db binary

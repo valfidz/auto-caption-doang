@@ -1,0 +1,52 @@
+// Skema data Auto Caption Studio (PRD bagian 6.1 pada guidance).
+// DATABASE_URL diisi oleh API saat runtime dan oleh scripts/db-push.mjs untuk CLI.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Project {
+  id             String   @id @default(cuid())
+  title          String
+  originalName   String
+  videoPath      String
+  width          Int // dimensi tampilan (setelah rotasi)
+  height         Int
+  fps            Float
+  durationSec    Float
+  hasAudio       Boolean  @default(true)
+  audioCodec     String?
+  language       String   @default("en")
+  transcriptJson String? // JSON: Transcript
+  styleJson      String? // JSON: StyleConfig
+  status         String   @default("uploaded") // uploaded|transcribing|ready|exporting|error
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  jobs           Job[]
+}
+
+model Job {
+  id         String    @id @default(cuid())
+  projectId  String
+  project    Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  type       String // transcribe | export
+  status     String    @default("queued") // queued|running|done|failed|canceled
+  progress   Float     @default(0)
+  error      String?
+  outputPath String?
+  createdAt  DateTime  @default(now())
+  finishedAt DateTime?
+}
+
+model StylePreset {
+  id         String  @id @default(cuid())
+  name       String
+  isBuiltIn  Boolean @default(false)
+  isDefault  Boolean @default(false)
+  configJson String
+}

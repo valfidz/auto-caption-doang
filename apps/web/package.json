@@ -1,0 +1,25 @@
+{
+  "name": "@acs/web",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Editor web Auto Caption Studio (Nuxt 3, SPA).",
+  "type": "module",
+  "scripts": {
+    "dev": "nuxt dev --port 3000",
+    "build": "nuxt build",
+    "preview": "nuxt preview",
+    "typecheck": "nuxt typecheck"
+  },
+  "dependencies": {
+    "@acs/shared": "workspace:*",
+    "@pinia/nuxt": "^0.11.3",
+    "jassub": "^2.5.23",
+    "nuxt": "^3.21.11",
+    "pinia": "^3.0.4",
+    "vue": "^3.5.44"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "vue-tsc": "^3.3.13"
+  }
+}
