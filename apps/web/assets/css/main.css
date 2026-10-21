@@ -403,12 +403,23 @@ textarea {
   display: block;
   max-width: 100%;
   line-height: 0;
+  /* Isolasi stacking context agar kanvas caption tidak memicu bug overlay video. */
+  isolation: isolate;
 }
 
 .preview-video {
   display: block;
   max-width: 100%;
   max-height: 70vh;
+  position: relative;
+  z-index: 0;
+  /* Paksa video ke layer komposit sendiri; menghindari video hitam saat kanvas
+     WebGL (caption) ditumpuk di atasnya pada sebagian driver/GPU. */
+  transform: translateZ(0);
+}
+
+.video-box > canvas.JASSUB {
+  z-index: 1;
 }
 
 .caption-handle {

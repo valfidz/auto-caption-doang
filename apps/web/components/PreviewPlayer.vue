@@ -19,8 +19,25 @@ const rendererError = ref<string | null>(null)
 const overlayReady = ref(false)
 const dragging = ref(false)
 
-let instance: { renderer: { setTrack(content: string): Promise<void> } | null; destroy(): Promise<void> } | null =
-  null
+interface CaptionRenderer {
+  renderer: { setTrack(content: string): Promise<void> } | null
+  resize(force?: boolean): Promise<void>
+  destroy(): Promise<void>
+}
+
+let instance: CaptionRenderer | null = null
+/** Satu pembuatan renderer pada satu waktu: mencegah dua kanvas WebGL bertumpuk. */
+let creating: Promise<void> | null = null
+let disposed = false
+
+/** Hapus kanvas JASSUB yatim (mis. sisa instance yang gagal dibuat). */
+function removeStrayCanvases(video: HTMLVideoElement | null = videoEl.value) {
+  const box = video?.parentElement
+  if (!box) return
+  for (const canvas of Array.from(box.querySelectorAll('canvas.JASSUB'))) {
+    canvas.remove()
+  }
+}
 
 const fontMap = computed<Record<string, string>>(() => {
   const map: Record<string, string> = {}
@@ -46,24 +63,55 @@ async function waitForMetadata(video: HTMLVideoElement) {
   })
 }
 
-async function ensureRenderer() {
-  if (instance || !videoEl.value || !props.ass) return
-  try {
-    await waitForMetadata(videoEl.value)
+async function ensureRenderer(): Promise<void> {
+  if (!videoEl.value || !props.ass) return
+  if (instance) return
+  if (creating) {
+    await creating
+    return
+  }
+
+  const video = videoEl.value
+  creating = (async () => {
+    await waitForMetadata(video)
+    if (disposed) return
+
+    removeStrayCanvases(video)
     const { createCaptionRenderer } = await import('~/composables/useCaptionRenderer')
-    instance = await createCaptionRenderer({
-      video: videoEl.value,
+    const created = await createCaptionRenderer({
+      video,
       ass: props.ass,
       fonts: fontMap.value,
       defaultFont: props.defaultFont,
     })
-    await (instance as unknown as { resize(force?: boolean): Promise<void> }).resize(true)
+    if (disposed) {
+      await created.destroy().catch(() => undefined)
+      return
+    }
+    instance = created
+    // ASS bisa sudah berubah selama pembuatan; pastikan track terbaru dipakai.
+    await created.renderer?.setTrack(props.ass)
+    await created.resize(true)
     overlayReady.value = true
     rendererError.value = null
-  } catch (err) {
-    rendererError.value =
-      err instanceof Error ? err.message : 'Renderer caption (JASSUB) gagal dimuat.'
-  }
+  })()
+    .catch((err: unknown) => {
+      rendererError.value =
+        err instanceof Error ? err.message : 'Renderer caption (JASSUB) gagal dimuat.'
+    })
+    .finally(() => {
+      creating = null
+    })
+
+  await creating
+}
+
+async function destroyRenderer(): Promise<void> {
+  const current = instance
+  instance = null
+  overlayReady.value = false
+  if (current) await current.destroy().catch(() => undefined)
+  removeStrayCanvases()
 }
 
 async function pushTrack(ass: string) {
@@ -129,32 +177,29 @@ watch(
   () => props.ass,
   async (ass) => {
     if (!ass) return
-    if (!instance) await ensureRenderer()
-    else await pushTrack(ass)
+    if (instance) await pushTrack(ass)
+    else await ensureRenderer()
   },
 )
 
 watch(
   () => props.src,
   async () => {
-    if (instance) {
-      await instance.destroy().catch(() => undefined)
-      instance = null
-      overlayReady.value = false
-    }
+    await destroyRenderer()
     await nextTick()
     await ensureRenderer()
   },
 )
 
 onMounted(async () => {
+  disposed = false
   await nextTick()
   await ensureRenderer()
 })
 
 onBeforeUnmount(async () => {
-  if (instance) await instance.destroy().catch(() => undefined)
-  instance = null
+  disposed = true
+  await destroyRenderer()
 })
 
 defineExpose({ seek, togglePlay })
@@ -169,7 +214,7 @@ defineExpose({ seek, togglePlay })
           :src="props.src"
           crossorigin="anonymous"
           controls
-          preload="metadata"
+          preload="auto"
           class="preview-video"
           @timeupdate="onTimeUpdate"
           @seeked="onTimeUpdate"

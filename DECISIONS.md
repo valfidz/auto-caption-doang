@@ -74,4 +74,10 @@ PRD: `PRD-auto-caption-studio.md` · Panduan kerja: `AGENT-GUIDE-auto-caption-st
 40. **Error job disimpan di `Job.error` dan ditampilkan apa adanya** di editor; tombol aksi tetap bisa dicoba ulang. Tidak ada exception filter global karena format default Nest (`statusCode`, `message`) sudah dipakai UI.
 41. **Keterbatasan yang diterima (bukan bug):** HDR/10-bit jadi pucat karena `yuv420p`; reflow kata sekitar saat pop; preview single-thread tanpa header COOP/COEP; `large-v3` float16 butuh VRAM > 4 GB (pakai `int8_float16` atau model lebih kecil).
 
+## D10 — Perbaikan preview video hitam (bug pasca-rilis)
+
+42. **Renderer caption dibuat tepat satu kali.** Sebelumnya `ensureRenderer()` dipanggil dari `onMounted` *dan* dari watcher `ass`; karena pembuatan renderer asinkron (menunggu metadata video + impor WASM), dua panggilan bisa lolos pengecekan `instance` dan menghasilkan **dua instance JASSUB / dua kanvas WebGL** bertumpuk. Di sebagian GPU, konteks tambahan membuat kompositing video gagal sehingga video tampak hitam di balik caption (export tetap normal karena libass membakar caption langsung ke frame). Perbaikan: satu promise `creating` yang di-`await` bersama, `removeStrayCanvases()` untuk membersihkan kanvas yatim, dan `destroyRenderer()` yang menunggu `destroy()` JASSUB selesai.
+43. **Hardening kompositing:** `.preview-video` diberi `transform: translateZ(0)` + `z-index: 0` dan `.video-box` diberi `isolation: isolate`, agar `<video>` berada di layer komposit sendiri dan tidak terkena bug *hardware overlay* Chromium saat kanvas WebGL ditumpuk di atasnya. Kanvas caption diberi `z-index: 1`.
+
+
 
