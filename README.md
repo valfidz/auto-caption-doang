@@ -104,6 +104,10 @@ Semua langkah di bawah bisa dilakukan dari browser di `http://localhost:3000`.
   `WHISPER_COMPUTE=int8_float16` atau model `small`/`medium`.
 - Preview JASSUB berjalan single-threaded bila halaman tidak memakai header COOP/COEP;
   hasil render tetap sama dengan export.
+- Preview caption memakai renderer **Canvas2D** secara default karena kanvas WebGL JASSUB
+  tampil buram di sebagian GPU/driver (video tampak hitam di balik caption). Caption tetap
+  dirender libass yang sama. Untuk mencoba WebGL: tambahkan `?preview=webgl` pada URL editor;
+  backend yang aktif terlihat di `<html data-caption-renderer="...">`.
 - Batas `TEMP_TTL_DAYS` hanya untuk berkas sementara; video proyek dan hasil export tidak
   dihapus otomatis.
 
