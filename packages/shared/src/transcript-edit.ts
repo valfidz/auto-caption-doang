@@ -66,7 +66,6 @@ export function splitWord(words: Word[], index: number, makeId: () => string = c
   if (text.length < 2) return words
 
   const middle = Math.floor(text.length / 2)
-  let cut = middle
   let left = ''
   let right = ''
 
@@ -80,11 +79,9 @@ export function splitWord(words: Word[], index: number, makeId: () => string = c
   if (spaceCut > 0) {
     left = text.slice(0, spaceCut).trim()
     right = text.slice(spaceCut + 1).trim()
-    cut = left.length
   } else {
     left = text.slice(0, middle).trim()
     right = text.slice(middle).trim()
-    cut = middle
   }
 
   if (!left || !right) return words

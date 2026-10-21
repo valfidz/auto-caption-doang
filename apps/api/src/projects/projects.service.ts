@@ -5,15 +5,18 @@ import type { Project as ProjectRow } from '@prisma/client'
 import {
   DEFAULT_STYLE,
   LANGUAGES,
+  normalizeStyle,
   normalizeWords,
   type Language,
   type ProjectDto,
+  type StyleConfig,
   type Transcript,
   type Word,
 } from '@acs/shared'
 import { APP_ENV } from '../config/env.module'
 import type { AppEnv } from '../config/env'
 import { FfprobeService } from '../media/ffprobe.service'
+import { PresetsService } from '../presets/presets.service'
 import { PrismaService } from '../prisma/prisma.module'
 import { toProjectDto } from './project.mapper'
 import { StorageService } from './storage.service'
@@ -40,6 +43,7 @@ export class ProjectsService {
     private readonly prisma: PrismaService,
     private readonly storage: StorageService,
     private readonly ffprobe: FfprobeService,
+    private readonly presets: PresetsService,
   ) {}
 
   async list(): Promise<ProjectDto[]> {
@@ -82,6 +86,9 @@ export class ProjectsService {
 
       const title = (upload.fields.title ?? '').trim() || titleFromFilename(upload.originalName)
 
+      // Style awal = preset default pengguna (fallback: Pop Bounce).
+      const initialStyle = (await this.presets.getDefaultConfig()) ?? DEFAULT_STYLE
+
       const row = await this.prisma.project.create({
         data: {
           id,
@@ -96,7 +103,7 @@ export class ProjectsService {
           audioCodec: meta.audioCodec,
           language,
           status: 'uploaded',
-          styleJson: JSON.stringify(DEFAULT_STYLE),
+          styleJson: JSON.stringify(initialStyle),
         },
       })
       return toProjectDto(row)
@@ -153,6 +160,20 @@ export class ProjectsService {
     const updated = await this.prisma.project.update({
       where: { id },
       data: { transcriptJson: JSON.stringify(transcript), status: 'ready' },
+    })
+    return toProjectDto(updated)
+  }
+
+  /** Simpan style proyek; nilai dinormalisasi & di-clamp agar aman untuk libass. */
+  async updateStyle(id: string, body: unknown): Promise<ProjectDto> {
+    await this.getRow(id)
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
+      throw new BadRequestException('Body style harus berupa objek StyleConfig.')
+    }
+    const style: StyleConfig = normalizeStyle(body as Partial<StyleConfig>)
+    const updated = await this.prisma.project.update({
+      where: { id },
+      data: { styleJson: JSON.stringify(style) },
     })
     return toProjectDto(updated)
   }

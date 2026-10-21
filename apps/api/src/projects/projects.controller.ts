@@ -57,6 +57,11 @@ export class ProjectsController {
     return this.projects.updateTranscript(id, dto.words, dto.language)
   }
 
+  @Put(':id/style')
+  updateStyle(@Param('id') id: string, @Body() body: unknown): Promise<ProjectDto> {
+    return this.projects.updateStyle(id, body)
+  }
+
   /**
    * Stream video dengan dukungan HTTP Range (wajib agar seek di <video> berfungsi).
    * Respons ditulis manual karena butuh status 206 dan header Content-Range.

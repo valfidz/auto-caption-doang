@@ -5,6 +5,7 @@ import { FontsModule } from './fonts/fonts.module'
 import { HealthModule } from './health/health.module'
 import { JobsModule } from './jobs/jobs.module'
 import { MediaModule } from './media/media.module'
+import { PresetsModule } from './presets/presets.module'
 import { PrismaModule } from './prisma/prisma.module'
 import { ProjectsModule } from './projects/projects.module'
 import { TranscribeModule } from './transcribe/transcribe.module'
@@ -15,6 +16,7 @@ import { TranscribeModule } from './transcribe/transcribe.module'
     PrismaModule,
     MediaModule,
     JobsModule,
+    PresetsModule,
     ProjectsModule,
     TranscribeModule,
     ExportModule,

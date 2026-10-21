@@ -11,7 +11,6 @@ import {
   generateAss,
   type Measurer,
   type StyleConfig,
-  type Transcript,
 } from '@acs/shared'
 import { runCommand } from '../common/process'
 import { APP_ENV } from '../config/env.module'

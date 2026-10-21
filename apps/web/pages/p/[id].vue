@@ -6,7 +6,9 @@ import {
   createMeasurer,
   deleteWordAt,
   generateAss,
+  getTemplate,
   joinWithNext,
+  normalizeStyle,
   splitWord,
   updateWordText,
   type CaptionGroup,
@@ -15,10 +17,12 @@ import {
   type Language,
   type Measurer,
   type ProjectDto,
+  type StyleConfig,
+  type StylePresetDto,
   type Word,
 } from '@acs/shared'
-
 import PreviewPlayer from '~/components/PreviewPlayer.vue'
+import StylePanel from '~/components/StylePanel.vue'
 
 const route = useRoute()
 const { base, apiFetch, videoUrl, downloadUrl } = useApi()
@@ -39,6 +43,7 @@ const groups = ref<CaptionGroup[]>([])
 const ass = ref('')
 const currentTime = ref(0)
 const selectedWordId = ref<string | null>(null)
+const activeTab = ref<'captions' | 'style'>('captions')
 
 const previewRef = ref<InstanceType<typeof PreviewPlayer> | null>(null)
 
@@ -55,13 +60,19 @@ const hasExport = ref(false)
 const saveState = ref<'idle' | 'saving' | 'saved' | 'error'>('idle')
 const saveError = ref<string | null>(null)
 let saveTimer: ReturnType<typeof setTimeout> | null = null
-// Mencegah respons simpan yang lebih lama menimpa editan yang lebih baru.
 let saveSequence = 0
+
+const draftStyle = ref<StyleConfig>({ ...DEFAULT_STYLE })
+const presets = ref<StylePresetDto[]>([])
+const styleSaving = ref(false)
+const styleSaveError = ref<string | null>(null)
+let styleTimer: ReturnType<typeof setTimeout> | null = null
+let styleSequence = 0
 
 let pollTimer: ReturnType<typeof setTimeout> | null = null
 let exportPollTimer: ReturnType<typeof setTimeout> | null = null
 
-const style = computed(() => project.value?.style ?? DEFAULT_STYLE)
+const style = computed(() => draftStyle.value)
 const videoSize = computed(() => ({
   width: project.value?.width ?? 1080,
   height: project.value?.height ?? 1920,
@@ -77,14 +88,18 @@ const exporting = computed(
     exportJob.value !== null &&
     (exportJob.value.status === 'queued' || exportJob.value.status === 'running'),
 )
-const selectedWord = computed(() => words.value.find((word) => word.id === selectedWordId.value) ?? null)
+const selectedWord = computed(
+  () => words.value.find((word) => word.id === selectedWordId.value) ?? null,
+)
 const activeWordId = computed(() => {
   const time = currentTime.value
   const found = words.value.find((word) => time >= word.start && time < word.end)
   return found?.id ?? null
 })
 const activeGroupIndex = computed(() =>
-  groups.value.findIndex((group) => currentTime.value >= group.start - 0.01 && currentTime.value <= group.end + 0.01),
+  groups.value.findIndex(
+    (group) => currentTime.value >= group.start - 0.01 && currentTime.value <= group.end + 0.01,
+  ),
 )
 
 function rebuild() {
@@ -103,6 +118,7 @@ async function loadProject() {
     const data = await apiFetch<ProjectDto>(`/projects/${projectId.value}`)
     project.value = data
     words.value = data.transcript?.words ?? []
+    draftStyle.value = normalizeStyle(data.style ?? DEFAULT_STYLE)
     if (data.language && data.language !== 'auto') language.value = data.language as Language
   } catch (err) {
     error.value = (err as { message?: string }).message ?? 'Gagal memuat proyek'
@@ -129,6 +145,16 @@ async function loadFonts() {
   rebuild()
 }
 
+async function loadPresets() {
+  try {
+    presets.value = await apiFetch<StylePresetDto[]>('/presets')
+  } catch {
+    presets.value = []
+  }
+}
+
+/* --- Transkrip ---------------------------------------------------------- */
+
 function scheduleSave() {
   saveState.value = 'saving'
   saveError.value = null
@@ -147,7 +173,7 @@ async function saveTranscript() {
         language: project.value.transcript?.language,
       }),
     })
-    if (sequence !== saveSequence) return // sudah ada editan yang lebih baru
+    if (sequence !== saveSequence) return
     project.value = updated
     words.value = updated.transcript?.words ?? words.value
     if (selectedWordId.value && !words.value.some((w) => w.id === selectedWordId.value)) {
@@ -207,6 +233,96 @@ function onRemove(id: string) {
   scheduleSave()
 }
 
+/* --- Style -------------------------------------------------------------- */
+
+function scheduleStyleSave() {
+  styleSaving.value = true
+  styleSaveError.value = null
+  if (styleTimer) clearTimeout(styleTimer)
+  styleTimer = setTimeout(() => void saveStyle(), 700)
+}
+
+async function saveStyle() {
+  const sequence = (styleSequence += 1)
+  try {
+    const updated = await apiFetch<ProjectDto>(`/projects/${projectId.value}/style`, {
+      method: 'PUT',
+      body: JSON.stringify(draftStyle.value),
+    })
+    if (sequence !== styleSequence) return
+    styleSaving.value = false
+    if (updated.style) draftStyle.value = updated.style
+    highlightSaveState()
+  } catch (err) {
+    if (sequence !== styleSequence) return
+    styleSaving.value = false
+    styleSaveError.value = (err as { message?: string }).message ?? 'Gagal menyimpan style'
+  }
+}
+
+function highlightSaveState() {
+  saveState.value = 'saved'
+}
+
+function onStyleChange(patch: Partial<StyleConfig>) {
+  draftStyle.value = { ...draftStyle.value, ...patch }
+  rebuild()
+  scheduleStyleSave()
+}
+
+function applyTemplate(templateId: string) {
+  const config = getTemplate(templateId)
+  if (!config) return
+  draftStyle.value = { ...config, templateId }
+  rebuild()
+  scheduleStyleSave()
+}
+
+function onMovePosition(xPct: number, yPct: number) {
+  onStyleChange({ posXPct: xPct, posYPct: yPct })
+}
+
+async function applyPreset(presetId: string) {
+  const preset = presets.value.find((item) => item.id === presetId)
+  if (!preset) return
+  draftStyle.value = { ...preset.config }
+  rebuild()
+  scheduleStyleSave()
+}
+
+async function savePreset(name: string) {
+  try {
+    await apiFetch<StylePresetDto>('/presets', {
+      method: 'POST',
+      body: JSON.stringify({ name, config: draftStyle.value }),
+    })
+    await loadPresets()
+  } catch (err) {
+    styleSaveError.value = (err as { message?: string }).message ?? 'Gagal menyimpan preset'
+  }
+}
+
+async function deletePreset(presetId: string) {
+  try {
+    await apiFetch<void>(`/presets/${presetId}`, { method: 'DELETE' })
+    await loadPresets()
+  } catch (err) {
+    styleSaveError.value = (err as { message?: string }).message ?? 'Gagal menghapus preset'
+  }
+}
+
+async function setDefaultPreset(presetId: string) {
+  try {
+    await apiFetch<StylePresetDto>(`/presets/${presetId}/default`, { method: 'PUT' })
+    await loadPresets()
+  } catch (err) {
+    styleSaveError.value =
+      (err as { message?: string }).message ?? 'Gagal menjadikan preset default'
+  }
+}
+
+/* --- Pemutaran ---------------------------------------------------------- */
+
 function onSeek(seconds: number) {
   currentTime.value = seconds
   previewRef.value?.seek(seconds)
@@ -219,6 +335,8 @@ function onTime(time: number) {
 function togglePlay() {
   previewRef.value?.togglePlay()
 }
+
+/* --- Job transkripsi ---------------------------------------------------- */
 
 async function startTranscription() {
   if (starting.value || transcribing.value) return
@@ -269,6 +387,8 @@ async function cancelJob() {
     jobError.value = (err as { message?: string }).message ?? 'Gagal membatalkan job'
   }
 }
+
+/* --- Export ------------------------------------------------------------- */
 
 async function startExport() {
   if (exportStarting.value || exporting.value || !project.value?.transcript) return
@@ -369,6 +489,7 @@ onMounted(async () => {
   await loadProject()
   rebuild()
   await loadFonts()
+  await loadPresets()
   await resumeJobs()
   window.addEventListener('keydown', onKeydown)
 })
@@ -378,6 +499,7 @@ onBeforeUnmount(() => {
   if (pollTimer) clearTimeout(pollTimer)
   if (exportPollTimer) clearTimeout(exportPollTimer)
   if (saveTimer) clearTimeout(saveTimer)
+  if (styleTimer) clearTimeout(styleTimer)
 })
 
 useHead(() => ({ title: project.value ? `${project.value.title} — Auto Caption Studio` : 'Proyek' }))
@@ -436,7 +558,11 @@ useHead(() => ({ title: project.value ? `${project.value.title} — Auto Caption
             :fonts="fonts"
             :font-base="fontBase"
             :default-font="style.fontFamily"
+            :pos-x="style.posXPct"
+            :pos-y="style.posYPct"
+            :show-handle="activeTab === 'style'"
             @time="onTime"
+            @move-position="onMovePosition"
           />
           <p v-if="fontWarning" class="banner banner-warn" style="margin-top: 10px">
             {{ fontWarning }}
@@ -448,92 +574,140 @@ useHead(() => ({ title: project.value ? `${project.value.title} — Auto Caption
 
         <aside class="editor-panel">
           <div class="panel-tabs">
-            <button class="tab tab-active">Captions</button>
+            <button
+              class="tab"
+              :class="{ 'tab-active': activeTab === 'captions' }"
+              @click="activeTab = 'captions'"
+            >
+              Captions
+            </button>
+            <button
+              class="tab"
+              :class="{ 'tab-active': activeTab === 'style' }"
+              @click="activeTab = 'style'"
+            >
+              Style
+            </button>
           </div>
 
           <div class="panel-scroll">
-            <div v-if="!project.hasAudio" class="banner banner-warn" style="margin: 12px">
-              Video ini tidak memiliki audio.
-            </div>
-
-            <template v-else-if="!project.transcript || words.length === 0">
-              <div class="card" style="margin: 12px">
-                <h2 class="panel-title">Transkripsi</h2>
-                <label class="field">
-                  <span>Bahasa</span>
-                  <select v-model="language" :disabled="transcribing">
-                    <option value="en">English (default)</option>
-                    <option value="id">Indonesia</option>
-                    <option value="auto">Auto-detect</option>
-                  </select>
-                </label>
-                <button
-                  class="btn btn-primary"
-                  style="margin-top: 12px; width: 100%"
-                  :disabled="starting || transcribing"
-                  @click="startTranscription"
-                >
-                  {{ transcribing ? 'Transkripsi berjalan…' : 'Mulai transkripsi' }}
-                </button>
+            <template v-if="activeTab === 'captions'">
+              <div v-if="!project.hasAudio" class="banner banner-warn" style="margin: 12px">
+                Video ini tidak memiliki audio.
               </div>
-            </template>
 
-            <template v-else>
-              <div v-if="transcribing && job" class="job-progress" style="padding: 12px">
-                <div class="job-progress-head">
-                  <span>{{
-                    job.status === 'queued' ? 'Menunggu antrean…' : 'Transkripsi ulang…'
+              <template v-else-if="!project.transcript || words.length === 0">
+                <div class="card" style="margin: 12px">
+                  <h2 class="panel-title">Transkripsi</h2>
+                  <label class="field">
+                    <span>Bahasa</span>
+                    <select v-model="language" :disabled="transcribing">
+                      <option value="en">English (default)</option>
+                      <option value="id">Indonesia</option>
+                      <option value="auto">Auto-detect</option>
+                    </select>
+                  </label>
+                  <button
+                    class="btn btn-primary"
+                    style="margin-top: 12px; width: 100%"
+                    :disabled="starting || transcribing"
+                    @click="startTranscription"
+                  >
+                    {{ transcribing ? 'Transkripsi berjalan…' : 'Mulai transkripsi' }}
+                  </button>
+                </div>
+              </template>
+
+              <template v-else>
+                <div v-if="transcribing && job" class="job-progress" style="padding: 12px">
+                  <div class="job-progress-head">
+                    <span>{{
+                      job.status === 'queued' ? 'Menunggu antrean…' : 'Transkripsi ulang…'
+                    }}</span>
+                    <span class="mono">{{ Math.round(job.progress * 100) }}%</span>
+                  </div>
+                  <div class="progress-track">
+                    <div class="progress-fill" :style="{ width: `${job.progress * 100}%` }" />
+                  </div>
+                  <button class="btn btn-ghost btn-sm" @click="cancelJob">Batalkan</button>
+                </div>
+
+                <div v-if="selectedWord" class="word-actions">
+                  <span class="mono" style="flex: 1; overflow: hidden; text-overflow: ellipsis">{{
+                    selectedWord.text
                   }}</span>
-                  <span class="mono">{{ Math.round(job.progress * 100) }}%</span>
+                  <button class="btn btn-ghost btn-sm" @click="onJoin(selectedWord.id)">
+                    Gabung
+                  </button>
+                  <button class="btn btn-ghost btn-sm" @click="onSplit(selectedWord.id)">
+                    Pisah
+                  </button>
+                  <button
+                    class="btn btn-ghost btn-sm btn-danger"
+                    @click="onRemove(selectedWord.id)"
+                  >
+                    Hapus
+                  </button>
                 </div>
-                <div class="progress-track">
-                  <div class="progress-fill" :style="{ width: `${job.progress * 100}%` }" />
-                </div>
-                <button class="btn btn-ghost btn-sm" @click="cancelJob">Batalkan</button>
-              </div>
 
-              <div v-if="selectedWord" class="word-actions">
-                <span class="mono" style="flex: 1; overflow: hidden; text-overflow: ellipsis">{{
-                  selectedWord.text
-                }}</span>
-                <button class="btn btn-ghost btn-sm" @click="onJoin(selectedWord.id)">Gabung</button>
-                <button class="btn btn-ghost btn-sm" @click="onSplit(selectedWord.id)">Pisah</button>
-                <button class="btn btn-ghost btn-sm btn-danger" @click="onRemove(selectedWord.id)">
-                  Hapus
-                </button>
-              </div>
+                <CaptionList
+                  :groups="groups"
+                  :current-time="currentTime"
+                  :active-group-index="activeGroupIndex"
+                  :active-word-id="activeWordId"
+                  :selected-word-id="selectedWordId"
+                  @seek="onSeek"
+                  @select="onSelect"
+                  @rename="onRename"
+                  @join="onJoin"
+                  @split="onSplit"
+                  @remove="onRemove"
+                />
+              </template>
 
-              <CaptionList
-                :groups="groups"
-                :current-time="currentTime"
-                :active-group-index="activeGroupIndex"
-                :active-word-id="activeWordId"
-                :selected-word-id="selectedWordId"
-                @seek="onSeek"
-                @select="onSelect"
-                @rename="onRename"
-                @join="onJoin"
-                @split="onSplit"
-                @remove="onRemove"
-              />
+              <p v-if="jobError" class="banner banner-error" style="margin: 12px">{{ jobError }}</p>
             </template>
 
-            <p v-if="jobError" class="banner banner-error" style="margin: 12px">{{ jobError }}</p>
+            <StylePanel
+              v-else
+              :style="draftStyle"
+              :fonts="fonts"
+              :presets="presets"
+              :saving="styleSaving"
+              :save-error="styleSaveError"
+              @change="onStyleChange"
+              @template="applyTemplate"
+              @save-preset="savePreset"
+              @apply-preset="applyPreset"
+              @delete-preset="deletePreset"
+              @set-default="setDefaultPreset"
+              @reset-position="onStyleChange({ posXPct: 50 })"
+            />
           </div>
 
           <footer class="panel-footer">
             <span class="mono" style="font-size: 12px">
-              {{
-                saveState === 'saving'
-                  ? 'Menyimpan…'
-                  : saveState === 'saved'
-                    ? 'Tersimpan'
-                    : saveState === 'error'
-                      ? 'Gagal menyimpan'
-                      : `${words.length} kata`
-              }}
+              <template v-if="activeTab === 'style'">
+                {{ styleSaving ? 'Menyimpan style…' : 'Style tersimpan' }}
+              </template>
+              <template v-else>
+                {{
+                  saveState === 'saving'
+                    ? 'Menyimpan…'
+                    : saveState === 'saved'
+                      ? 'Tersimpan'
+                      : saveState === 'error'
+                        ? 'Gagal menyimpan'
+                        : `${words.length} kata`
+                }}
+              </template>
             </span>
-            <button class="btn btn-ghost btn-sm" :disabled="transcribing" @click="startTranscription">
+            <button
+              v-if="activeTab === 'captions'"
+              class="btn btn-ghost btn-sm"
+              :disabled="transcribing"
+              @click="startTranscription"
+            >
               {{ project.transcript ? 'Transkripsi ulang' : 'Mulai transkripsi' }}
             </button>
           </footer>

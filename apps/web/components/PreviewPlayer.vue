@@ -7,13 +7,17 @@ const props = defineProps<{
   fonts: FontInfo[]
   fontBase: string
   defaultFont: string
+  posX: number
+  posY: number
+  showHandle: boolean
 }>()
 
-const emit = defineEmits<{ time: [number] }>()
+const emit = defineEmits<{ time: [number]; movePosition: [number, number] }>()
 
 const videoEl = ref<HTMLVideoElement | null>(null)
 const rendererError = ref<string | null>(null)
 const overlayReady = ref(false)
+const dragging = ref(false)
 
 let instance: { renderer: { setTrack(content: string): Promise<void> } | null; destroy(): Promise<void> } | null =
   null
@@ -25,6 +29,11 @@ const fontMap = computed<Record<string, string>>(() => {
   }
   return map
 })
+
+const handleStyle = computed(() => ({
+  left: `${props.posX}%`,
+  top: `${props.posY}%`,
+}))
 
 async function waitForMetadata(video: HTMLVideoElement) {
   if (video.readyState >= 1 && video.videoWidth > 0) return
@@ -81,6 +90,41 @@ function onTimeUpdate() {
   if (videoEl.value) emit('time', videoEl.value.currentTime)
 }
 
+function positionFromPointer(event: PointerEvent): { x: number; y: number } {
+  const video = videoEl.value
+  if (!video) return { x: props.posX, y: props.posY }
+  const rect = video.getBoundingClientRect()
+  if (rect.width === 0 || rect.height === 0) return { x: props.posX, y: props.posY }
+
+  let x = ((event.clientX - rect.left) / rect.width) * 100
+  let y = ((event.clientY - rect.top) / rect.height) * 100
+  x = Math.min(100, Math.max(0, x))
+  y = Math.min(100, Math.max(0, y))
+  // Snap ke tengah horizontal.
+  if (Math.abs(x - 50) <= 2) x = 50
+  return { x: Math.round(x * 10) / 10, y: Math.round(y * 10) / 10 }
+}
+
+function onHandleDown(event: PointerEvent) {
+  event.preventDefault()
+  event.stopPropagation()
+  dragging.value = true
+  ;(event.target as HTMLElement).setPointerCapture?.(event.pointerId)
+}
+
+function onHandleMove(event: PointerEvent) {
+  if (!dragging.value) return
+  const { x, y } = positionFromPointer(event)
+  emit('movePosition', x, y)
+}
+
+function onHandleUp(event: PointerEvent) {
+  if (!dragging.value) return
+  dragging.value = false
+  const { x, y } = positionFromPointer(event)
+  emit('movePosition', x, y)
+}
+
 watch(
   () => props.ass,
   async (ass) => {
@@ -118,18 +162,33 @@ defineExpose({ seek, togglePlay })
 
 <template>
   <div class="preview-wrap">
-    <div class="preview-card">
-      <video
-        ref="videoEl"
-        :src="props.src"
-        crossorigin="anonymous"
-        controls
-        preload="metadata"
-        class="preview-video"
-        @timeupdate="onTimeUpdate"
-        @seeked="onTimeUpdate"
-        @play="onTimeUpdate"
-      />
+    <div class="preview-stage">
+      <div class="video-box">
+        <video
+          ref="videoEl"
+          :src="props.src"
+          crossorigin="anonymous"
+          controls
+          preload="metadata"
+          class="preview-video"
+          @timeupdate="onTimeUpdate"
+          @seeked="onTimeUpdate"
+          @play="onTimeUpdate"
+        />
+        <div
+          v-if="props.showHandle"
+          class="caption-handle"
+          :class="{ 'caption-handle-dragging': dragging }"
+          :style="handleStyle"
+          title="Geser posisi caption"
+          @pointerdown="onHandleDown"
+          @pointermove="onHandleMove"
+          @pointerup="onHandleUp"
+          @pointercancel="onHandleUp"
+        >
+          ⊕
+        </div>
+      </div>
     </div>
     <p v-if="rendererError" class="banner banner-warn" style="margin-top: 10px">
       Preview caption tidak aktif: {{ rendererError }}
