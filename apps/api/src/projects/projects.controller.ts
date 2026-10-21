@@ -1,4 +1,5 @@
 import {
+  Body,
   Controller,
   Delete,
   Get,
@@ -6,6 +7,7 @@ import {
   HttpCode,
   Param,
   Post,
+  Put,
   Req,
   Res,
 } from '@nestjs/common'
@@ -15,6 +17,7 @@ import type { ProjectDto } from '@acs/shared'
 import { parseRangeHeader } from '../common/range'
 import { FfprobeService } from '../media/ffprobe.service'
 import { ProjectsService } from './projects.service'
+import { UpdateTranscriptDto } from './transcript.dto'
 import { UploadService } from './upload.service'
 
 @Controller('projects')
@@ -44,6 +47,14 @@ export class ProjectsController {
   @HttpCode(204)
   async remove(@Param('id') id: string): Promise<void> {
     await this.projects.remove(id)
+  }
+
+  @Put(':id/transcript')
+  updateTranscript(
+    @Param('id') id: string,
+    @Body() dto: UpdateTranscriptDto,
+  ): Promise<ProjectDto> {
+    return this.projects.updateTranscript(id, dto.words, dto.language)
   }
 
   /**

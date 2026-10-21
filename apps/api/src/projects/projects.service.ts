@@ -2,7 +2,15 @@ import { BadRequestException, Inject, Injectable, NotFoundException } from '@nes
 import path from 'node:path'
 import { randomUUID } from 'node:crypto'
 import type { Project as ProjectRow } from '@prisma/client'
-import { DEFAULT_STYLE, LANGUAGES, type Language, type ProjectDto } from '@acs/shared'
+import {
+  DEFAULT_STYLE,
+  LANGUAGES,
+  normalizeWords,
+  type Language,
+  type ProjectDto,
+  type Transcript,
+  type Word,
+} from '@acs/shared'
 import { APP_ENV } from '../config/env.module'
 import type { AppEnv } from '../config/env'
 import { FfprobeService } from '../media/ffprobe.service'
@@ -101,6 +109,52 @@ export class ProjectsService {
     await this.getRow(id)
     await this.prisma.project.delete({ where: { id } })
     await this.storage.removeProjectDir(id)
+  }
+
+  /**
+   * Simpan hasil edit transkrip. Kata dinormalisasi (waktu naik monoton, durasi
+   * minimal 20 ms) dan ID duplikat diberi ID baru agar UI tetap stabil.
+   */
+  async updateTranscript(
+    id: string,
+    words: Word[],
+    language?: string,
+  ): Promise<ProjectDto> {
+    const row = await this.getRow(id)
+    const normalized = normalizeWords(words)
+    if (normalized.length === 0) {
+      throw new BadRequestException('Transkrip tidak boleh kosong.')
+    }
+
+    const seen = new Set<string>()
+    const deduped = normalized.map((word) => {
+      if (!seen.has(word.id)) {
+        seen.add(word.id)
+        return word
+      }
+      const nextId = `w${seen.size}-${Math.random().toString(36).slice(2, 7)}`
+      seen.add(nextId)
+      return { ...word, id: nextId }
+    })
+
+    const existingLanguage = (() => {
+      try {
+        return row.transcriptJson ? (JSON.parse(row.transcriptJson).language as string) : null
+      } catch {
+        return null
+      }
+    })()
+
+    const transcript: Transcript = {
+      language: language?.trim() || existingLanguage || row.language || 'en',
+      words: deduped,
+    }
+
+    const updated = await this.prisma.project.update({
+      where: { id },
+      data: { transcriptJson: JSON.stringify(transcript), status: 'ready' },
+    })
+    return toProjectDto(updated)
   }
 
   /** Path absolut berkas video proyek. */

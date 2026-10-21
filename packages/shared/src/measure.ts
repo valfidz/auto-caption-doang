@@ -1,4 +1,13 @@
-import opentype from 'opentype.js'
+import * as opentypeNamespace from 'opentype.js'
+
+/**
+ * opentype.js punya dua build: UMD (CommonJS, dipakai Node) dan ESM (dipakai
+ * browser) yang tidak mengekspor `default`. Normalisasi ini membuat impor
+ * bekerja di kedua environment.
+ */
+const opentype = ((opentypeNamespace as unknown as { default?: typeof opentypeNamespace }).default ??
+  opentypeNamespace) as typeof opentypeNamespace
+
 
 /** Pengukur lebar teks yang dipakai grouping (harus sama di browser & Node). */
 export interface Measurer {
@@ -41,5 +50,35 @@ export function createFallbackMeasurer(charWidthRatio = 0.62): Measurer {
     measure(text: string, fontSizePx: number): number {
       return text.length * fontSizePx * charWidthRatio
     },
+  }
+}
+
+export interface FontNames {
+  /** Nama family seperti yang dibaca libass (mis. "Montserrat ExtraBold"). */
+  family: string
+  /** Nama subfamily (mis. "Regular", "Bold"). */
+  subfamily: string
+  fullName: string
+}
+
+/** Baca nama font dari tabel `name` (dipakai GET /fonts dan verifikasi style). */
+export function readFontNames(fontData: ArrayBuffer | Uint8Array): FontNames {
+  const font = opentype.parse(toArrayBuffer(fontData))
+  const read = (name: string, fallback: string): string => {
+    try {
+      const value = font.getEnglishName(name as never)
+      return typeof value === 'string' && value.trim().length > 0 ? value.trim() : fallback
+    } catch {
+      return fallback
+    }
+  }
+
+  // Name ID 1 (fontFamily) yang dipakai libass; bukan typographic family (ID 16).
+  const family = read('fontFamily', 'Unknown')
+  const subfamily = read('fontSubfamily', 'Regular')
+  return {
+    family,
+    subfamily,
+    fullName: read('fullName', `${family} ${subfamily}`),
   }
 }
