@@ -58,10 +58,28 @@ Semua pengaturan lewat environment variable; lihat [`.env.example`](.env.example
 Yang utama: `DATA_DIR`, `FFMPEG_PATH`, `FFPROBE_PATH`, `PYTHON_PATH`, `WHISPER_MODEL`,
 `WHISPER_DEVICE`, `WHISPER_COMPUTE`, `FONTS_DIR`, `TEMP_TTL_DAYS`, `PORT`.
 
-Catatan GPU: `faster-whisper` (ctranslate2) membutuhkan DLL CUDA 12 + cuDNN 9. `pnpm run doctor`
-melaporkan bila GPU terdeteksi tetapi CUDA tidak siap; worker akan mencoba CPU dan memberi
-peringatan di log. Di Windows tanpa toolkit CUDA, pasang `nvidia-cublas-cu12` dan
-`nvidia-cudnn-cu12` (lihat komentar di `workers/transcriber/requirements.txt`).
+Catatan GPU: `faster-whisper` (ctranslate2) memuat **cuBLAS** lewat nama DLL, dan tidak
+membawanya sendiri. Karena itu `requirements.txt` memasang `nvidia-cublas-cu12` (DLL CUDA 12),
+dan worker menambahkan folder `site-packages/nvidia/*/bin` ke jalur pencarian DLL sebelum
+memuat model. Tanpa ini, GPU selalu gagal dengan pesan `cublas64_12.dll is not found` dan
+transkripsi jatuh ke CPU (jauh lebih lambat). cuDNN sudah dibawa oleh paket ctranslate2.
+
+Urutan percobaan worker: `cuda` sesuai `WHISPER_COMPUTE` → `cuda/int8_float16` bila error
+kehabisan VRAM (mis. `large-v3` di GPU 4 GB) → `cpu/int8`. Setiap perpindahan dicatat sebagai
+peringatan di UI dan di log aplikasi.
+
+## Log dan tracing error
+
+Semua log aplikasi (startup, job mulai/selesai, peringatan GPU, error, traceback worker)
+ditulis ke **`data/logs/app.log`** dengan timestamp ISO, mis.:
+
+```
+[2026-10-22T12:50:45.439Z] INFO Job cmvjj... (transcribe) mulai, proyek bcafda81...
+[2026-10-22T12:50:48.911Z] INFO Transkripsi selesai: 77 kata
+```
+
+Berkas ini tidak ikut dibersihkan oleh `TEMP_TTL_DAYS`; hapus manual bila terlalu besar.
+Log yang sama tetap tampil di terminal `pnpm dev`.
 
 ## Struktur
 
@@ -71,7 +89,7 @@ apps/web             Nuxt 3 (SPA) editor caption + preview JASSUB
 packages/shared      tipe, template, grouping, generator ASS, pengukur teks (dipakai web & api)
 workers/transcriber  worker Python faster-whisper
 assets/fonts         font yang dipakai libass & browser
-data/                proyek, berkas sementara, SQLite, model (gitignored)
+data/                proyek, berkas sementara, SQLite, model, log (gitignored)
 ```
 
 ## Verifikasi manual per milestone

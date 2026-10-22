@@ -40,6 +40,43 @@ def check_cancel(cancel_file: str | None) -> None:
         raise Canceled()
 
 
+def prepare_cuda_dll_paths() -> None:
+    """Tambahkan folder DLL NVIDIA ke jalur pencarian Windows.
+
+    ctranslate2 memuat cuBLAS/cuDNN berdasarkan nama berkas, bukan path absolut.
+    Wheel `nvidia-cublas-cu12` menaruh DLL-nya di site-packages/nvidia/*/bin,
+    yang tidak ada di PATH secara default.
+    """
+    if os.name != "nt":
+        return
+    try:
+        import ctranslate2
+
+        cli_dir = os.path.dirname(ctranslate2.__file__)
+        # ctranslate2 ada di <site-packages>/ctranslate2, jadi induknya = site-packages.
+        site_packages = os.path.dirname(cli_dir)
+    except Exception:  # noqa: BLE001 - jangan gagalkan worker hanya karena ini
+        return
+
+    candidates = [cli_dir]
+    for package in ("cublas", "cudnn"):
+        candidates.append(os.path.join(site_packages, "nvidia", package, "bin"))
+
+    for folder in candidates:
+        if not os.path.isdir(folder):
+            continue
+        os.environ["PATH"] = folder + os.pathsep + os.environ.get("PATH", "")
+        try:
+            os.add_dll_directory(folder)
+        except OSError:
+            pass
+
+
+def looks_like_oom(error: Exception) -> bool:
+    text = str(error).lower()
+    return "out of memory" in text or "cuda_error_out_of_memory" in text or "insufficient memory" in text
+
+
 def normalize_words(raw_words) -> list[dict]:
     """Rapikan kata: buang kosong, pastikan end > start (>=20 ms), waktu monoton naik."""
     words: list[dict] = []
@@ -181,6 +218,8 @@ def main() -> None:
     language = None if args.language == "auto" else args.language
     reporter = ProgressReporter()
 
+    prepare_cuda_dll_paths()
+
     try:
         from faster_whisper import WhisperModel
     except Exception as exc:  # noqa: BLE001 - pesan harus sampai ke UI
@@ -203,38 +242,54 @@ def main() -> None:
     except Exception as exc:  # noqa: BLE001
         fail(f"Gagal membaca audio: {exc}")
 
-    try:
-        check_cancel(args.cancel_file)
-        model = WhisperModel(args.model, device=device, compute_type=compute)
-        check_cancel(args.cancel_file)
-        words, info = transcribe_with(model, audio_data, language, reporter, args.cancel_file)
-    except Canceled:
-        emit({"type": "canceled", "message": "Dibatalkan oleh pengguna."})
-        sys.exit(3)
-    except Exception as exc:  # noqa: BLE001
-        if device != "cuda" or not looks_like_cuda_error(exc):
-            traceback.print_exc()
-            fail(f"Transkripsi gagal: {exc}")
+    # Urutan percobaan: GPU sesuai konfigurasi → GPU int8_float16 (bila VRAM kurang)
+    # → CPU int8. Percobaan int8 hanya dilakukan bila error pertama adalah OOM.
+    attempts: list[tuple[str, str]] = [(device, compute)]
+    if device == "cuda" and compute != "int8_float16":
+        attempts.append(("cuda", "int8_float16"))
+    attempts.append(("cpu", "int8"))
 
-        emit(
-            {
-                "type": "warning",
-                "message": f"GPU tidak dapat dipakai ({exc.__class__.__name__}: {exc}). "
-                "Melanjutkan di CPU (lebih lambat).",
-            }
-        )
-        emit({"type": "progress", "value": 0.0})
+    last_error: Exception | None = None
+    for attempt_device, attempt_compute in attempts:
+        if (
+            attempt_device == "cuda"
+            and attempt_compute == "int8_float16"
+            and last_error is not None
+            and not looks_like_oom(last_error)
+        ):
+            continue
+        if last_error is not None:
+            if attempt_device == "cuda":
+                message = (
+                    f"GPU gagal ({last_error}). Mencoba ulang dengan int8_float16 "
+                    "(memori lebih kecil)."
+                )
+            else:
+                message = (
+                    f"GPU tidak dapat dipakai ({last_error}). "
+                    "Melanjutkan di CPU (lebih lambat)."
+                )
+            emit({"type": "warning", "message": message})
+            emit({"type": "progress", "value": 0.0})
+
         try:
-            model = WhisperModel(args.model, device="cpu", compute_type="int8")
+            check_cancel(args.cancel_file)
+            model = WhisperModel(args.model, device=attempt_device, compute_type=attempt_compute)
+            check_cancel(args.cancel_file)
             words, info = transcribe_with(
                 model, audio_data, language, reporter, args.cancel_file
             )
+            break
         except Canceled:
             emit({"type": "canceled", "message": "Dibatalkan oleh pengguna."})
             sys.exit(3)
-        except Exception as cpu_exc:  # noqa: BLE001
-            traceback.print_exc()
-            fail(f"Transkripsi gagal di CPU: {cpu_exc}")
+        except Exception as exc:  # noqa: BLE001
+            last_error = exc
+            if attempt_device == "cpu" or not looks_like_cuda_error(exc):
+                traceback.print_exc()
+                fail(f"Transkripsi gagal: {exc}")
+    else:
+        fail(f"Transkripsi gagal: {last_error}")
 
     if not words:
         fail("Tidak ada kata yang terdeteksi. Video mungkin tanpa suara yang jelas.")

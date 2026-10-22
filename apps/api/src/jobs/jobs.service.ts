@@ -1,4 +1,4 @@
-import { Inject, Injectable, NotFoundException, OnModuleInit } from '@nestjs/common'
+import { Inject, Injectable, Logger, NotFoundException, OnModuleInit } from '@nestjs/common'
 import fs from 'node:fs'
 import path from 'node:path'
 import type { Job as JobRow } from '@prisma/client'
@@ -50,6 +50,7 @@ interface QueueEntry extends JobDefinition {
  */
 @Injectable()
 export class JobsService implements OnModuleInit {
+  private readonly logger = new Logger(JobsService.name)
   private readonly queue: QueueEntry[] = []
   private active: { jobId: string; controller: AbortController } | null = null
 
@@ -182,6 +183,7 @@ export class JobsService implements OnModuleInit {
 
     const controller = new AbortController()
     this.active = { jobId: entry.jobId, controller }
+    this.logger.log(`Job ${entry.jobId} (${entry.type}) mulai, proyek ${entry.projectId}`)
 
     await this.prisma.job
       .update({
@@ -214,6 +216,9 @@ export class JobsService implements OnModuleInit {
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
+      this.logger.error(
+        `Job ${entry.jobId} (${entry.type}) gagal${controller.signal.aborted ? ' (dibatalkan)' : ''}: ${message}`,
+      )
       const current = await this.prisma.job.findUnique({ where: { id: entry.jobId } })
       if (current && current.status !== 'canceled') {
         await this.prisma.job

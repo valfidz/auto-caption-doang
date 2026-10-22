@@ -154,6 +154,11 @@ export class TranscribeService {
           workerError ??
           result.stderr.trim().split(/\r?\n/).slice(-3).join(' ') ??
           'worker berhenti tanpa pesan'
+        // Simpan traceback worker (bila ada) ke log aplikasi untuk tracing.
+        const stderrTail = result.stderr.trim().slice(-4000)
+        this.logger.error(
+          `Worker transkripsi gagal (job ${context.jobId})${stderrTail ? `:\n${stderrTail}` : ''}`,
+        )
         throw new Error(
           /^Transkripsi gagal/i.test(detail) ? detail : `Transkripsi gagal: ${detail}`,
         )

@@ -1,7 +1,11 @@
 # Dependensi worker transkripsi (dipasang oleh `pnpm setup:py` ke .venv).
 faster-whisper>=1.2.0
 
-# --- Opsional: runtime CUDA 12 + cuDNN 9 untuk GPU (Windows/Linux) --------
-# Hanya perlu bila driver tidak menyediakan DLL CUDA/cuDNN di PATH.
-# nvidia-cublas-cu12>=12.4
+# --- Runtime CUDA 12 untuk GPU -------------------------------------------
+# ctranslate2 memuat cuBLAS lewat nama DLL; wheel ini menyediakannya tanpa
+# perlu memasang CUDA Toolkit. Worker menambahkan folder bin-nya ke PATH.
+# Tanpa ini, GPU selalu gagal ("cublas64_12.dll is not found").
+nvidia-cublas-cu12>=12.4
+# cuDNN: ctranslate2 sudah membawa cudnn64_9.dll. Pasang wheel ini hanya bila
+# muncul error terkait cudnn.
 # nvidia-cudnn-cu12>=9.1
