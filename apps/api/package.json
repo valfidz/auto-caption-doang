@@ -5,7 +5,7 @@
   "description": "REST API Auto Caption Studio (NestJS) + runner job in-process.",
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "dev": "concurrently -k -n tsc,node -c gray,blue \"tsc -p tsconfig.build.json --watch --preserveWatchOutput\" \"node --watch dist/main.js\"",
+    "dev": "tsc -p tsconfig.build.json && concurrently -k -n tsc,node -c gray,blue \"tsc -p tsconfig.build.json --watch --preserveWatchOutput\" \"node --watch dist/main.js\"",
     "start": "node dist/main.js",
     "doctor": "tsc -p tsconfig.build.json && node dist/cli/doctor.js",
     "typecheck": "tsc --noEmit",

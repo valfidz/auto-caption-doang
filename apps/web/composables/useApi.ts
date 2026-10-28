@@ -10,15 +10,24 @@ export function useApi() {
   const base = String(config.public.apiBase).replace(/\/+$/, '')
 
   async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
-    const response = await fetch(`${base}${path}`, {
-      ...options,
-      headers: {
-        ...(options.body && !(options.body instanceof FormData)
-          ? { 'Content-Type': 'application/json' }
-          : {}),
-        ...(options.headers ?? {}),
-      },
-    })
+    let response: Response
+    try {
+      response = await fetch(`${base}${path}`, {
+        ...options,
+        headers: {
+          ...(options.body && !(options.body instanceof FormData)
+            ? { 'Content-Type': 'application/json' }
+            : {}),
+          ...(options.headers ?? {}),
+        },
+      })
+    } catch {
+      // statusCode 0 = gagal di level jaringan (API mati/restart), bukan respons HTTP.
+      throw {
+        statusCode: 0,
+        message: 'Tidak dapat terhubung ke API. Server mungkin sedang restart.',
+      } satisfies ApiError
+    }
     if (!response.ok) {
       let message = `${response.status} ${response.statusText}`
       try {

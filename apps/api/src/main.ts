@@ -15,6 +15,24 @@ async function bootstrap(): Promise<void> {
   // Semua log Nest ikut ditulis ke DATA_DIR/logs/app.log untuk tracing error.
   const logger = createFileLogger(path.join(env.dataDir, 'logs', 'app.log'))
 
+  // Catat penyebab proses berhenti (crash/signal/exit) agar restart watch-mode
+  // tidak hilang tanpa jejak di log.
+  const logProcessEvent = (label: string, detail: unknown): void => {
+    const text = detail instanceof Error ? (detail.stack ?? detail.message) : String(detail)
+    logger.error(`${label}: ${text}`)
+  }
+  process.on('uncaughtException', (error) => {
+    logProcessEvent('uncaughtException', error)
+    process.exit(1)
+  })
+  process.on('unhandledRejection', (reason) => {
+    logProcessEvent('unhandledRejection', reason)
+    process.exit(1)
+  })
+  process.on('SIGTERM', () => logProcessEvent('SIGTERM', 'proses dihentikan'))
+  process.on('SIGINT', () => logProcessEvent('SIGINT', 'proses dihentikan'))
+  process.on('exit', (code) => logProcessEvent('exit', `code=${code}`))
+
   // Body parser dimatikan lalu dipasang ulang dengan limit lebih besar:
   // transkrip bisa besar, sementara unggahan video memakai stream (bukan body parser).
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {

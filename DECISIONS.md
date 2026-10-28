@@ -87,5 +87,12 @@ PRD: `PRD-auto-caption-studio.md` · Panduan kerja: `AGENT-GUIDE-auto-caption-st
 47. **Urutan percobaan transkripsi:** `cuda` (sesuai `WHISPER_COMPUTE`) → `cuda/int8_float16` bila error pertama adalah kehabisan VRAM → `cpu/int8`. Percobaan int8 hanya dilakukan untuk OOM, supaya error lain (mis. cuBLAS tidak ada) tidak menambah percobaan yang sia-sia. Hasil: video 32 detik selesai ~3,6 detik di RTX 3050 4 GB dengan model `small`; audio 8 detik ~2,7 detik.
 48. **Log aplikasi ditulis ke `DATA_DIR/logs/app.log`** lewat `FileLogger` yang membungkus `ConsoleLogger` (terminal tetap seperti biasa). Isinya: startup/route, job mulai, peringatan GPU, error job beserta traceback worker (ekor stderr), dan penyelesaian job. Tujuannya agar error bisa ditelusuri setelah kejadian tanpa menyalin output terminal. Berkas log tidak ikut TTL pembersihan.
 
+## D12 — "Failed to fetch" saat memulai transkripsi (bug pasca-rilis)
+
+49. **Penyebab: proses API berhenti, bukan masalah CORS/jaringan.** Log `app.log` menunjukkan pola konsisten: `Job … mulai` lalu `Starting Nest application…` ~1,7 detik kemudian, dan job ditandai "Terinterupsi oleh restart server". Karena API berhenti saat request berjalan, browser melaporkan `Failed to fetch` (bukan error HTTP). Refresh lalu mencoba lagi berhasil karena proses sudah hidup kembali.
+50. **Dua perbaikan:** (a) skrip dev API sekarang mengompilasi sekali (`tsc -p … &&`) **sebelum** menjalankan watcher, menghapus race startup di mana `node --watch` restart beberapa kali saat tsc masih menulis `dist` — terlihat di log lama sebagai dua `Starting Nest application` berjarak ~1,6 detik; (b) semua event proses (`uncaughtException`, `unhandledRejection`, `SIGTERM`, `SIGINT`, `exit`) dicatat ke `app.log`, sehingga bila proses berhenti lagi penyebabnya tidak hilang tanpa jejak.
+51. **UI mencoba ulang sekali** (jeda 1,5 detik) saat `POST /projects/:id/transcribe` gagal di level jaringan (`statusCode 0`). Ini membuat klik pertama tetap berhasil bila API restart singkat; error HTTP asli (4xx/5xx) tidak diulang.
+
+
 
 

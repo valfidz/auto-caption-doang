@@ -78,8 +78,10 @@ ditulis ke **`data/logs/app.log`** dengan timestamp ISO, mis.:
 [2026-10-22T12:50:48.911Z] INFO Transkripsi selesai: 77 kata
 ```
 
-Berkas ini tidak ikut dibersihkan oleh `TEMP_TTL_DAYS`; hapus manual bila terlalu besar.
-Log yang sama tetap tampil di terminal `pnpm dev`.
+Penyebab proses berhenti juga dicatat (`SIGTERM`, `SIGINT`, `exit: code=…`, `uncaughtException`,
+`unhandledRejection`) — berguna untuk mendiagnosis error "Failed to fetch" yang muncul saat
+server dev restart. Berkas ini tidak ikut dibersihkan oleh `TEMP_TTL_DAYS`; hapus manual bila
+terlalu besar. Log yang sama tetap tampil di terminal `pnpm dev`.
 
 ## Struktur
 

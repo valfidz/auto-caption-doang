@@ -342,11 +342,22 @@ async function startTranscription() {
   if (starting.value || transcribing.value) return
   starting.value = true
   jobError.value = null
-  try {
-    job.value = await apiFetch<JobDto>(`/projects/${projectId.value}/transcribe`, {
+
+  const request = () =>
+    apiFetch<JobDto>(`/projects/${projectId.value}/transcribe`, {
       method: 'POST',
       body: JSON.stringify({ language: language.value }),
     })
+
+  try {
+    try {
+      job.value = await request()
+    } catch (err) {
+      // API lokal bisa restart singkat (watch mode): satu percobaan ulang.
+      if ((err as { statusCode?: number }).statusCode !== 0) throw err
+      await new Promise((resolve) => setTimeout(resolve, 1500))
+      job.value = await request()
+    }
     void pollJob(job.value.id)
   } catch (err) {
     jobError.value = (err as { message?: string }).message ?? 'Gagal memulai transkripsi'
