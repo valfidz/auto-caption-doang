@@ -143,3 +143,4 @@ Semua langkah di bawah bisa dilakukan dari browser di `http://localhost:3000`.
 | M5 Editor | selesai |
 | M6 Style & preset | selesai |
 | M7 Polesan | selesai |
+# auto-caption-doang
